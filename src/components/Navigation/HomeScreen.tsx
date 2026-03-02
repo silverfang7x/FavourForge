@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { User } from '@supabase/supabase-js';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { Ionicons } from '@expo/vector-icons'; // Ensure you have the correct icon set
 import { BeaconMap } from '@components/Map/BeaconMap';
 import { signOut } from '@services/AuthService';
 import type { RootStackParamList } from '../../navigation';

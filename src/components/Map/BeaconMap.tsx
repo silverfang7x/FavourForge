@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   map: {
-    flex: 1,
+    flex: 1, // Ensure the map takes up the full height
   },
   topControls: {
     position: 'absolute',
