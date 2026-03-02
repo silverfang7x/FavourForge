@@ -10,7 +10,7 @@ import type { RootStackParamList } from '../../navigation';
 type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export function HomeScreen({ route, navigation }: HomeScreenProps) {
-  const user: User = route.params.user;
+  const user: User | null = route.params.user; // Ensure user can be null
 
   return (
     <View style={styles.container}>
@@ -30,10 +30,12 @@ export function HomeScreen({ route, navigation }: HomeScreenProps) {
       </View>
 
       <View style={styles.body}>
-        <BeaconMap
-          userId={user.id}
-          onOpenChat={(beaconId) => navigation.navigate('Chat', { user, beaconId })}
-        />
+        {user?.id && (
+          <BeaconMap
+            userId={user.id}
+            onOpenChat={(beaconId) => navigation.navigate('Chat', { user, beaconId })}
+          />
+        )}
       </View>
     </View>
   );
