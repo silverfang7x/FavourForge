@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,11 +46,14 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [nearby, setNearby] = useState<BeaconModel[]>([]);
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
+  const [reward, setReward] = useState('');
+  const [selectedBeacon, setSelectedBeacon] = useState<BeaconModel | null>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
 
   const mapRef = useRef<MapView | null>(null);
   const sheetRef = useRef<BottomSheet | null>(null);
 
-  const sheetSnapPoints = useMemo(() => ['18%', '46%'], []);
+  const sheetSnapPoints = useMemo(() => ['20%', '62%'], []);
 
   useEffect(() => {
     let mounted = true;
@@ -120,16 +126,16 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
   }, []);
 
   const openCreateSheet = useCallback(() => {
-    setDropping(true);
-    sheetRef.current?.snapToIndex(1);
+    setIsModalVisible(true);
   }, []);
 
   const closeCreateSheet = useCallback(() => {
     Keyboard.dismiss();
-    sheetRef.current?.close();
+    setIsModalVisible(false);
     setDropping(false);
     setPin(null);
     setDescription('');
+    setReward('');
   }, []);
 
   const createBeacon = useCallback(
@@ -190,39 +196,34 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
   }, [pin, description, createBeacon, onOpenChat, refreshNearby, closeCreateSheet]);
 
   const onPressBeacon = useCallback(
-    async (beacon: BeaconModel) => {
-      if (!region) return;
-
+    (beacon: BeaconModel) => {
       if (beacon.user_id === userId) {
         Alert.alert('Your beacon', 'This is your own beacon.');
         return;
       }
-
-      Alert.alert('Accept beacon?', beacon.description, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept',
-          onPress: () => {
-            acceptBeacon({
-              beaconId: beacon.id,
-              lat: region.latitude,
-              lon: region.longitude,
-              maxDistanceM: 150,
-            })
-              .then(() => {
-                setNearby((prev) => prev.filter((b) => b.id !== beacon.id));
-                if (onOpenChat) onOpenChat(beacon.id);
-              })
-              .catch((err: unknown) => {
-                const message = err instanceof Error ? err.message : 'Unknown error';
-                Alert.alert('Accept failed', message);
-              });
-          },
-        },
-      ]);
+      setSelectedBeacon(beacon);
     },
-    [region, userId, onOpenChat],
+    [userId],
   );
+
+  const acceptSelectedBeacon = useCallback(() => {
+    if (!selectedBeacon || !region) return;
+    acceptBeacon({
+      beaconId: selectedBeacon.id,
+      lat: region.latitude,
+      lon: region.longitude,
+      maxDistanceM: 150,
+    })
+      .then(() => {
+        setNearby((prev) => prev.filter((b) => b.id !== selectedBeacon.id));
+        setSelectedBeacon(null);
+        if (onOpenChat) onOpenChat(selectedBeacon.id);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        Alert.alert('Accept failed', message);
+      });
+  }, [selectedBeacon, region, onOpenChat]);
 
   if (locationError) {
     return (
@@ -253,52 +254,55 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
         showsUserLocation
         showsMyLocationButton
       >
-        {nearby.map((b) => (
-          <Marker
-            key={b.id}
-            coordinate={{ latitude: b.lat, longitude: b.lon }}
-            onPress={() => onPressBeacon(b)}
-          >
-            <View style={styles.markerWrap}>
-              <View style={[styles.marker, b.user_id === userId ? styles.markerMine : styles.markerOther]}>
-                <Text numberOfLines={1} style={styles.markerText}>
-                  {b.description}
-                </Text>
-              </View>
-              <View style={styles.markerStem} />
-            </View>
-          </Marker>
-        ))}
+        {nearby.map((b) => {
+          const isOwn = b.user_id === userId;
+          const isHighValue = parseFloat((b as any).reward ?? '0') >= 50;
+          const markerStyle = isOwn
+            ? styles.markerMine
+            : isHighValue
+              ? styles.markerHigh
+              : styles.markerOther;
+          const stemStyle = isOwn
+            ? styles.markerStemMine
+            : isHighValue
+              ? styles.markerStemHigh
+              : styles.markerStemOther;
+          return (
+            <Marker
+              key={b.id}
+              coordinate={{ latitude: b.lat, longitude: b.lon }}
+              title={b.description}
+              description={(b as any).reward ? `💰 $${(b as any).reward}` : 'Tap to view job'}
+              onPress={() => onPressBeacon(b)}
+            />
+          );
+        })}
         {pin ? (
-          <Marker coordinate={pin}>
-            <View style={styles.markerWrap}>
-              <View style={[styles.marker, styles.markerDraft]}>
-                <Text numberOfLines={1} style={styles.markerTextDraft}>
-                  New beacon
-                </Text>
-              </View>
-              <View style={styles.markerStem} />
-            </View>
-          </Marker>
+          <Marker
+            coordinate={pin}
+            title="New Beacon"
+            description="Your job will be placed here"
+            pinColor="#6C63FF"
+          />
         ) : null}
       </MapView>
 
       <View style={styles.topControls} pointerEvents="box-none">
         <View style={styles.pill}>
-          <Text style={styles.pillTitle}>Beacons</Text>
-          <Text style={styles.pillSubtitle}>
-            {isLoadingNearby ? 'Searching nearby…' : `${nearby.length} nearby`}
+          <View style={styles.pillDot} />
+          <Text style={styles.pillTitle}>
+            {isLoadingNearby ? 'Searching…' : `${nearby.length} nearby`}
           </Text>
         </View>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={openCreateSheet}
-          style={({ pressed }) => [styles.fab, pressed ? styles.fabPressed : null]}
-        >
-          <Text style={styles.fabText}>+</Text>
-        </Pressable>
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={openCreateSheet}
+        style={({ pressed }) => [styles.fab, pressed ? styles.fabPressed : null]}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </Pressable>
 
       <View style={styles.hint} pointerEvents="none">
         <Text style={styles.hintText}>
@@ -308,83 +312,153 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
         </Text>
       </View>
 
-      <BottomSheet
-        ref={(r) => {
-          sheetRef.current = r;
-        }}
-        index={-1}
-        enablePanDownToClose
-        snapPoints={sheetSnapPoints}
-        onClose={() => {
-          setDropping(false);
-          setPin(null);
-          setDescription('');
-        }}
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} pressBehavior="close" appearsOnIndex={0} disappearsOnIndex={-1} />
-        )}
-        handleIndicatorStyle={styles.sheetIndicator}
-        backgroundStyle={styles.sheetBackground}
+      {/* ── Job detail Modal ── */}
+      <Modal
+        visible={selectedBeacon !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedBeacon(null)}
       >
-        <View style={styles.sheetContent}>
-          <View style={styles.sheetHeader}>
-            <View style={styles.sheetHeaderLeft}>
-              <Text style={styles.sheetTitle}>Create a beacon</Text>
-              <Text style={styles.sheetSubtitle}>
-                {pin
-                  ? `Pinned at ${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`
-                  : 'Long-press the map to choose a location'}
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedBeacon(null)}>
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>📍 Job Available</Text>
+                <Text style={styles.modalPosted}>Tap to accept this task</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedBeacon(null)} style={styles.modalClose}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Description */}
+            <ScrollView style={styles.modalDescWrap} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalDesc}>{selectedBeacon?.description}</Text>
+            </ScrollView>
+
+            {/* Earning card */}
+            <View style={styles.modalEarnCard}>
+              <Text style={styles.modalEarnLabel}>💰 Earning Potential</Text>
+              <Text style={styles.modalEarnValue}>
+                {selectedBeacon && (selectedBeacon as any).reward
+                  ? `$${(selectedBeacon as any).reward}`
+                  : 'Negotiable'}
               </Text>
             </View>
 
-            <TouchableOpacity accessibilityRole="button" onPress={closeCreateSheet} style={styles.sheetClose}>
-              <Text style={styles.sheetCloseText}>Close</Text>
-            </TouchableOpacity>
-          </View>
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalBtnSecondary}
+                onPress={() => setSelectedBeacon(null)}
+              >
+                <Text style={styles.modalBtnSecondaryText}>Dismiss</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalBtnPrimary} onPress={acceptSelectedBeacon}>
+                <Text style={styles.modalBtnPrimaryText}>🚀 Accept Job</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
-          <BottomSheetTextInput
-            style={styles.sheetInput}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="What do you need help with?"
-            placeholderTextColor="#9ca3af"
-            multiline
-            accessibilityLabel="Beacon description"
-            returnKeyType={Platform.select({ ios: 'done', android: 'done' })}
-          />
+      {/* ── Create Job Modal ── */}
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={closeCreateSheet}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closeCreateSheet}>
+          <Pressable style={styles.createModalCard} onPress={() => undefined}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>🗺️ Post a Job</Text>
+                <Text style={styles.modalPosted}>Fill in the details and drop a pin</Text>
+              </View>
+              <TouchableOpacity style={styles.modalClose} onPress={closeCreateSheet}>
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.sheetActions}>
-            <TouchableOpacity
-              accessibilityRole="button"
-              style={[styles.actionBtn, styles.actionSecondary]}
-              onPress={() => {
-                setPin(null);
-              }}
-            >
-              <Text style={styles.actionSecondaryText}>Clear pin</Text>
-            </TouchableOpacity>
+            {/* Location hint */}
+            <View style={styles.locationHintBox}>
+              <Text style={styles.locationHintText}>
+                {pin
+                  ? `📍 Pin set: ${pin.latitude.toFixed(4)}, ${pin.longitude.toFixed(4)}`
+                  : '📍 Long-press the map to set a pin location'}
+              </Text>
+            </View>
 
-            <TouchableOpacity
-              accessibilityRole="button"
-              style={[styles.actionBtn, !canCreate ? styles.actionDisabled : styles.actionPrimary]}
-              onPress={onCreate}
-              disabled={!canCreate}
-            >
-              <Text style={styles.actionPrimaryText}>{isCreating ? 'Creating…' : 'Create'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </BottomSheet>
+            {/* Job Description */}
+            <Text style={styles.inputLabel}>Job Description *</Text>
+            <TextInput
+              style={styles.sheetInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="What do you need help with? Be specific..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              accessibilityLabel="Job description"
+            />
+
+            {/* Earning Potential */}
+            <Text style={styles.inputLabel}>💰 Job Cost / Earning Potential</Text>
+            <View style={styles.earnRow}>
+              <View style={styles.earnRowLeft}>
+                <Text style={styles.earnLabel}>Set a fair price</Text>
+                <Text style={styles.earnRecommended}>Suggested: $15.00 – $50.00</Text>
+              </View>
+              <View style={styles.earnInputWrap}>
+                <Text style={styles.earnPrefix}>$</Text>
+                <TextInput
+                  style={styles.earnInput}
+                  value={reward}
+                  onChangeText={setReward}
+                  placeholder="0.00"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Job reward amount"
+                />
+              </View>
+            </View>
+
+            {/* Actions */}
+            <View style={styles.sheetActions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionSecondary]}
+                onPress={closeCreateSheet}
+              >
+                <Text style={styles.actionSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, !canCreate ? styles.actionDisabled : styles.actionPrimary]}
+                onPress={onCreate}
+                disabled={!canCreate}
+              >
+                <Text style={styles.actionPrimaryText}>
+                  {isCreating ? '⏳ Creating…' : '🚀 Post Job'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   map: {
-    flex: 1, // Ensure the map takes up the full height
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
   },
   topControls: {
     position: 'absolute',
@@ -393,77 +467,128 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(229,231,235,0.9)',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
+    borderColor: '#EDE9FE',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.15,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  pillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#6C63FF',
   },
   pillTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#111827',
+    color: '#1A1A2E',
+    letterSpacing: 0.3,
   },
   pillSubtitle: {
     marginTop: 2,
     fontSize: 12,
     fontWeight: '600',
-    color: '#6b7280',
+    color: '#6B7280',
   },
   fab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    position: 'absolute',
+    bottom: 115,
+    right: 20,
+    zIndex: 99,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111827',
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+    backgroundColor: '#6C63FF',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
   },
   fabPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.95,
+    transform: [{ scale: 0.93 }],
+    opacity: 0.85,
   },
   fabText: {
     color: 'white',
     fontWeight: '900',
-    fontSize: 26,
-    marginTop: -1,
+    fontSize: 30,
+    marginTop: -2,
   },
   markerWrap: {
     alignItems: 'center',
+    // Legacy wrap — kept for compatibility
+  },
+  // ── Simple circle pin markers (guaranteed to render on Android) ──
+  markerPin: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
+  },
+  markerPinOther: {
+    backgroundColor: '#6C63FF',
+  },
+  markerPinMine: {
+    backgroundColor: '#8B5CF6',
+  },
+  markerPinHigh: {
+    backgroundColor: '#F59E0B',
+  },
+  markerPinDraft: {
+    backgroundColor: '#94A3B8',
+  },
+  markerPinEmoji: {
+    fontSize: 22,
   },
   marker: {
-    maxWidth: 180,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
+    minWidth: 80,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 2,
     shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   markerOther: {
-    backgroundColor: 'rgba(17,24,39,0.92)',
-    borderColor: 'rgba(17,24,39,0.2)',
+    backgroundColor: '#6C63FF',
+    borderColor: '#4F46E5',
   },
   markerMine: {
-    backgroundColor: 'rgba(59,130,246,0.95)',
-    borderColor: 'rgba(59,130,246,0.25)',
+    backgroundColor: '#8B5CF6',
+    borderColor: '#7C3AED',
+  },
+  markerHigh: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#D97706',
   },
   markerDraft: {
     backgroundColor: 'rgba(255,255,255,0.96)',
@@ -483,9 +608,18 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     marginTop: -2,
-    backgroundColor: 'rgba(17,24,39,0.92)',
+    backgroundColor: '#6C63FF',
     transform: [{ rotate: '45deg' }],
     borderRadius: 2,
+  },
+  markerStemOther: {
+    backgroundColor: '#6C63FF',
+  },
+  markerStemMine: {
+    backgroundColor: '#8B5CF6',
+  },
+  markerStemHigh: {
+    backgroundColor: '#F59E0B',
   },
   center: {
     flex: 1,
@@ -513,9 +647,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(17,24,39,0.72)',
+    backgroundColor: 'rgba(26,26,46,0.75)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(108,99,255,0.3)',
   },
   hintText: {
     color: 'white',
@@ -523,13 +657,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sheetIndicator: {
-    backgroundColor: '#d1d5db',
+    backgroundColor: '#6C63FF',
     width: 44,
   },
   sheetBackground: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   sheetContent: {
     flex: 1,
@@ -548,37 +682,61 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheetTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
-    color: '#111827',
+    color: '#1A1A2E',
   },
   sheetSubtitle: {
     marginTop: 4,
     fontSize: 12,
     fontWeight: '600',
-    color: '#6b7280',
+    color: '#6C63FF',
   },
   sheetClose: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: '#F3F4F6',
   },
   sheetCloseText: {
-    color: '#111827',
+    color: '#6B7280',
     fontWeight: '800',
     fontSize: 12,
   },
-  sheetInput: {
-    minHeight: 96,
+  quickEarnBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#EDE9FE',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#C4B5FD',
+    alignSelf: 'flex-start',
+  },
+  quickEarnText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#6C63FF',
+    letterSpacing: 0.5,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: -4,
+  },
+  sheetInput: {
+    minHeight: 80,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: '#1A1A2E',
+    backgroundColor: '#F8F9FA',
   },
   sheetActions: {
     flexDirection: 'row',
@@ -592,20 +750,239 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionPrimary: {
-    backgroundColor: '#111827',
+    backgroundColor: '#6C63FF',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
   actionDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   actionSecondary: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   actionPrimaryText: {
     color: 'white',
     fontWeight: '900',
+    fontSize: 15,
   },
   actionSecondaryText: {
-    color: '#111827',
+    color: '#6B7280',
     fontWeight: '900',
+    fontSize: 14,
+  },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EDE9FE',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    padding: 14,
+    gap: 12,
+  },
+  earnRowLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  earnLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6C63FF',
+  },
+  earnRecommended: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  earnInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1.5,
+    borderColor: '#C4B5FD',
+  },
+  earnPrefix: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#6C63FF',
+  },
+  earnInput: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#4F46E5',
+    minWidth: 70,
+    paddingVertical: 0,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  tagChipActive: {
+    backgroundColor: '#EDE9FE',
+    borderColor: '#C4B5FD',
+  },
+  tagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  tagTextActive: {
+    color: '#6C63FF',
+  },
+  // ── Job detail Modal ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  // ── Create Job Modal card (taller than the beacon detail modal) ──
+  createModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    gap: 14,
+    borderTopWidth: 1,
+    borderColor: '#EDE9FE',
+    maxHeight: '90%',
+  },
+  locationHintBox: {
+    backgroundColor: '#F0EDFF',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+  },
+  locationHintText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6C63FF',
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    gap: 16,
+    borderTopWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1A1A2E',
+  },
+  modalPosted: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6C63FF',
+  },
+  modalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    color: '#6B7280',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  modalDescWrap: {
+    maxHeight: 100,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 14,
+    padding: 14,
+  },
+  modalDesc: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A1A2E',
+    lineHeight: 22,
+  },
+  modalEarnCard: {
+    backgroundColor: '#EDE9FE',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalEarnLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#6C63FF',
+  },
+  modalEarnValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#4F46E5',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalBtnSecondary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  modalBtnSecondaryText: {
+    color: '#6B7280',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  modalBtnPrimary: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: '#6C63FF',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  modalBtnPrimaryText: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 15,
   },
 });
