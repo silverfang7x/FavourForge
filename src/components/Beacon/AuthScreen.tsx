@@ -20,6 +20,8 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
+const FEATURE_BADGES = ['⚡ Quick Cash', '📍 Local Jobs', '🤝 Community', '💰 Earn ₹₹₹'];
+
 export function AuthScreen() {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
@@ -60,7 +62,8 @@ export function AuthScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.select({ ios: 'padding', android: undefined })}
+      behavior={Platform.select({ ios: 'padding', android: 'height' })}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -69,11 +72,22 @@ export function AuthScreen() {
       >
         {/* ── Hero ── */}
         <View style={styles.hero}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoEmoji}>⚡</Text>
+          <View style={styles.logoRing}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoEmoji}>⚡</Text>
+            </View>
           </View>
           <Text style={styles.heroTitle}>FavorForge</Text>
           <Text style={styles.heroSub}>Earn quick cash. Help your community.</Text>
+
+          {/* Feature badges */}
+          <View style={styles.badgeRow}>
+            {FEATURE_BADGES.map((b) => (
+              <View key={b} style={styles.badge}>
+                <Text style={styles.badgeText}>{b}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* ── Card ── */}
@@ -81,9 +95,14 @@ export function AuthScreen() {
           <Text style={styles.cardTitle}>
             {mode === 'signup' ? '👋 Create Account' : '🔑 Welcome Back'}
           </Text>
+          <Text style={styles.cardSubtitle}>
+            {mode === 'signup'
+              ? 'Join thousands earning locally'
+              : 'Sign in to your FavorForge account'}
+          </Text>
 
-          <Text style={styles.label}>Email address</Text>
-          <View style={styles.inputWrap}>
+          {/* Email */}
+          <View style={styles.inputGroup}>
             <Text style={styles.inputIcon}>✉️</Text>
             <TextInput
               style={styles.input}
@@ -98,8 +117,8 @@ export function AuthScreen() {
             />
           </View>
 
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.inputWrap}>
+          {/* Password */}
+          <View style={styles.inputGroup}>
             <Text style={styles.inputIcon}>🔒</Text>
             <TextInput
               style={styles.input}
@@ -113,6 +132,7 @@ export function AuthScreen() {
             />
           </View>
 
+          {/* Submit */}
           <Animated.View style={{ transform: [{ scale: btnScale }] }}>
             <Pressable
               style={[styles.btn, canSubmit ? styles.btnEnabled : styles.btnDisabled]}
@@ -123,23 +143,35 @@ export function AuthScreen() {
               accessibilityRole="button"
             >
               <Text style={styles.btnText}>
-                {submitting ? '⏳ Please wait…' : mode === 'signup' ? '🚀 Sign Up' : '⚡ Log In'}
+                {submitting ? '⏳ Please wait…' : mode === 'signup' ? '🚀 Create Account' : '⚡ Sign In'}
               </Text>
             </Pressable>
           </Animated.View>
 
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Mode switch */}
           <Pressable
             onPress={() => setMode((m) => (m === 'login' ? 'signup' : 'login'))}
+            style={styles.switchBtn}
             accessibilityRole="button"
           >
             <Text style={styles.switchText}>
               {mode === 'signup'
-                ? 'Already have an account? Log in →'
-                : "Don't have an account? Sign up →"}
+                ? 'Already have an account? '
+                : "Don't have an account? "}
+              <Text style={styles.switchTextHighlight}>
+                {mode === 'signup' ? 'Log In →' : 'Sign Up →'}
+              </Text>
             </Text>
           </Pressable>
 
-          <Text style={styles.help}>🔐 Password must be at least 8 characters</Text>
+          <Text style={styles.help}>🔐 Your data is encrypted & safe</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -149,7 +181,7 @@ export function AuthScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#F0EDFF',
   },
   scroll: {
     flexGrow: 1,
@@ -159,27 +191,35 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#EDE9FE',
+  logoRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(108,99,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  logoCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#6C63FF',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#6C63FF',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   logoEmoji: {
-    fontSize: 38,
+    fontSize: 36,
   },
   heroTitle: {
-    fontSize: 34,
+    fontSize: 36,
     fontWeight: '900',
     color: '#1A1A2E',
     letterSpacing: -0.5,
@@ -191,6 +231,26 @@ const styles = StyleSheet.create({
     color: '#6C63FF',
     letterSpacing: 0.2,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+  },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6C63FF',
+  },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -198,37 +258,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#6C63FF',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 20,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-    gap: 4,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+    gap: 0,
   },
   cardTitle: {
     fontSize: 22,
     fontWeight: '900',
     color: '#1A1A2E',
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
+  cardSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
     color: '#6B7280',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginTop: 12,
-    marginBottom: 6,
+    marginBottom: 20,
   },
-  inputWrap: {
+  inputGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8F9FA',
-    borderRadius: 14,
+    borderRadius: 15,
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
     paddingHorizontal: 14,
-    paddingVertical: 2,
     gap: 10,
+    marginBottom: 12,
+  },
+  inputGroupFocused: {
+    borderColor: '#6C63FF',
+    backgroundColor: '#FAFAFE',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   inputIcon: {
     fontSize: 16,
@@ -241,18 +307,18 @@ const styles = StyleSheet.create({
     color: '#1A1A2E',
   },
   btn: {
-    marginTop: 20,
+    marginTop: 8,
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: 15,
     alignItems: 'center',
   },
   btnEnabled: {
     backgroundColor: '#6C63FF',
     shadowColor: '#6C63FF',
     shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 10,
   },
   btnDisabled: {
     backgroundColor: '#E5E7EB',
@@ -263,15 +329,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0.3,
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  switchBtn: {
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
   switchText: {
-    marginTop: 16,
-    color: '#6C63FF',
-    fontWeight: '700',
-    textAlign: 'center',
     fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  switchTextHighlight: {
+    color: '#6C63FF',
+    fontWeight: '800',
   },
   help: {
-    marginTop: 10,
+    marginTop: 14,
     fontSize: 12,
     color: '#9CA3AF',
     textAlign: 'center',

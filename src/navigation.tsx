@@ -92,14 +92,15 @@ const MOCK_THREADS = [
   {
     id: '5',
     name: 'FavorForge',
-    preview: '⚡ You earned $25.00 from completing "Move Box"',
+    preview: '⚡ You earned ₹2,000 from completing "Move Box"',
     time: 'Yesterday',
     unread: 0,
     avatar: '⚡',
+    beaconId: 'system',
   },
 ];
 
-function InboxScreen() {
+function InboxScreen({ navigation }: { navigation: any }) {
   return (
     <View style={s.screen}>
       <View style={s.screenHeader}>
@@ -110,7 +111,17 @@ function InboxScreen() {
       </View>
       <ScrollView showsVerticalScrollIndicator={false}>
         {MOCK_THREADS.map((t) => (
-          <TouchableOpacity key={t.id} style={s.threadRow} activeOpacity={0.75}>
+          <TouchableOpacity
+            key={t.id}
+            style={s.threadRow}
+            activeOpacity={0.75}
+            onPress={() =>
+              navigation.navigate('Chat', {
+                user: undefined,
+                beaconId: (t as any).beaconId ?? t.id,
+              })
+            }
+          >
             <View style={s.avatarCircle}>
               <Text style={s.avatarEmoji}>{t.avatar}</Text>
             </View>

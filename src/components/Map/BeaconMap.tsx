@@ -49,6 +49,9 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
   const [reward, setReward] = useState('');
   const [selectedBeacon, setSelectedBeacon] = useState<BeaconModel | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [duration, setDuration] = useState('2');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [radiusM, setRadiusM] = useState(1500);
 
   const mapRef = useRef<MapView | null>(null);
   const sheetRef = useRef<BottomSheet | null>(null);
@@ -110,6 +113,23 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
       setIsLoadingNearby(false);
     }
   }, [region]);
+
+  async function searchLocation() {
+    if (!searchQuery.trim()) return;
+    try {
+      const results = await Location.geocodeAsync(searchQuery.trim());
+      if (results.length > 0) {
+        const { latitude, longitude } = results[0];
+        const newRegion = { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+        setRegion(newRegion);
+        mapRef.current?.animateToRegion(newRegion, 600);
+      } else {
+        Alert.alert('Not found', 'No location found for that search.');
+      }
+    } catch {
+      Alert.alert('Search error', 'Could not geocode location.');
+    }
+  }
 
   useEffect(() => {
     refreshNearby().catch(() => undefined);
@@ -287,12 +307,49 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
         ) : null}
       </MapView>
 
+      {/* ── Search Bar ── */}
+      <View style={styles.searchBar} pointerEvents="box-none">
+        <View style={styles.searchInner}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search a location…"
+            placeholderTextColor="#9CA3AF"
+            returnKeyType="search"
+            onSubmitEditing={searchLocation}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Text style={styles.searchClear}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* ── Radius Control + Nearby Pill ── */}
       <View style={styles.topControls} pointerEvents="box-none">
         <View style={styles.pill}>
           <View style={styles.pillDot} />
           <Text style={styles.pillTitle}>
             {isLoadingNearby ? 'Searching…' : `${nearby.length} nearby`}
           </Text>
+        </View>
+        <View style={styles.radiusControl}>
+          <TouchableOpacity
+            style={styles.radiusBtn}
+            onPress={() => setRadiusM((r) => Math.max(300, r - 300))}
+          >
+            <Text style={styles.radiusBtnText}>−</Text>
+          </TouchableOpacity>
+          <Text style={styles.radiusLabel}>{(radiusM / 1000).toFixed(1)} km</Text>
+          <TouchableOpacity
+            style={styles.radiusBtn}
+            onPress={() => setRadiusM((r) => Math.min(5000, r + 300))}
+          >
+            <Text style={styles.radiusBtnText}>+</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -312,7 +369,7 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
         </Text>
       </View>
 
-      {/* ── Job detail Modal ── */}
+      {/* ── Job Detail Modal ── */}
       <Modal
         visible={selectedBeacon !== null}
         transparent
@@ -323,7 +380,7 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
           <Pressable style={styles.modalCard} onPress={() => undefined}>
             {/* Header */}
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle}>📍 Job Available</Text>
                 <Text style={styles.modalPosted}>Tap to accept this task</Text>
               </View>
@@ -337,26 +394,50 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
               <Text style={styles.modalDesc}>{selectedBeacon?.description}</Text>
             </ScrollView>
 
-            {/* Earning card */}
-            <View style={styles.modalEarnCard}>
-              <Text style={styles.modalEarnLabel}>💰 Earning Potential</Text>
-              <Text style={styles.modalEarnValue}>
-                {selectedBeacon && (selectedBeacon as any).reward
-                  ? `$${(selectedBeacon as any).reward}`
-                  : 'Negotiable'}
-              </Text>
+            {/* Info cards row */}
+            <View style={styles.infoCardRow}>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardIcon}>💰</Text>
+                <Text style={styles.infoCardLabel}>Reward</Text>
+                <Text style={styles.infoCardValue}>
+                  {(selectedBeacon as any)?.reward ? `₹${(selectedBeacon as any).reward}` : '₹ Negotiable'}
+                </Text>
+              </View>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardIcon}>⏱️</Text>
+                <Text style={styles.infoCardLabel}>Duration</Text>
+                <Text style={styles.infoCardValue}>
+                  {(selectedBeacon as any)?.duration ? `${(selectedBeacon as any).duration}h` : 'Flexible'}
+                </Text>
+              </View>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardIcon}>📍</Text>
+                <Text style={styles.infoCardLabel}>Distance</Text>
+                <Text style={styles.infoCardValue}>{'< 1.5 km'}</Text>
+              </View>
             </View>
 
-            {/* Actions */}
+            {/* Action buttons */}
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.modalBtnSecondary}
-                onPress={() => setSelectedBeacon(null)}
+                onPress={() => {
+                  setSelectedBeacon(null);
+                  if (onOpenChat && selectedBeacon) onOpenChat(selectedBeacon.id);
+                }}
               >
-                <Text style={styles.modalBtnSecondaryText}>Dismiss</Text>
+                <Text style={styles.modalBtnSecondaryText}>💬 Message</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBtnNav}
+                onPress={() => {
+                  Alert.alert('Navigation', 'Opening maps navigation…');
+                }}
+              >
+                <Text style={styles.modalBtnNavText}>🧭 Navigate</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalBtnPrimary} onPress={acceptSelectedBeacon}>
-                <Text style={styles.modalBtnPrimaryText}>🚀 Accept Job</Text>
+                <Text style={styles.modalBtnPrimaryText}>🚀 Accept</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -406,20 +487,36 @@ export function BeaconMap({ userId, onOpenChat }: BeaconMapProps) {
               accessibilityLabel="Job description"
             />
 
+            {/* Duration Selector */}
+            <Text style={styles.inputLabel}>⏱️ Time Duration (hours)</Text>
+            <View style={styles.durationRow}>
+              {['1', '2', '3', '4', '6', '8+'].map((h) => (
+                <TouchableOpacity
+                  key={h}
+                  style={[styles.durationChip, duration === h && styles.durationChipActive]}
+                  onPress={() => setDuration(h)}
+                >
+                  <Text style={[styles.durationChipText, duration === h && styles.durationChipTextActive]}>
+                    {h}h
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* Earning Potential */}
             <Text style={styles.inputLabel}>💰 Job Cost / Earning Potential</Text>
             <View style={styles.earnRow}>
               <View style={styles.earnRowLeft}>
                 <Text style={styles.earnLabel}>Set a fair price</Text>
-                <Text style={styles.earnRecommended}>Suggested: $15.00 – $50.00</Text>
+                <Text style={styles.earnRecommended}>Suggested: ₹500 – ₹2000</Text>
               </View>
               <View style={styles.earnInputWrap}>
-                <Text style={styles.earnPrefix}>$</Text>
+                <Text style={styles.earnPrefix}>₹</Text>
                 <TextInput
                   style={styles.earnInput}
                   value={reward}
                   onChangeText={setReward}
-                  placeholder="0.00"
+                  placeholder="500"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
                   accessibilityLabel="Job reward amount"
@@ -460,14 +557,162 @@ const styles = StyleSheet.create({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
   },
+  // ── Search Bar ──
+  searchBar: {
+    position: 'absolute',
+    top: 56,
+    left: 16,
+    right: 16,
+    zIndex: 20,
+  },
+  searchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    gap: 8,
+  },
+  searchIcon: { fontSize: 16 },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A2E',
+    paddingVertical: 0,
+  },
+  searchClear: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontWeight: '700',
+    paddingHorizontal: 4,
+  },
+  // ── Radius Control ──
+  radiusControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  radiusBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radiusBtnText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#6C63FF',
+    lineHeight: 20,
+  },
+  radiusLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1A1A2E',
+    minWidth: 36,
+    textAlign: 'center',
+  },
+  // ── Info card row (job detail modal) ──
+  infoCardRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  infoCard: {
+    flex: 1,
+    backgroundColor: '#F0EDFF',
+    borderRadius: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+  },
+  infoCardIcon: { fontSize: 20 },
+  infoCardLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  infoCardValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#6C63FF',
+    textAlign: 'center',
+  },
+  // ── Navigate button ──
+  modalBtnNav: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 15,
+    alignItems: 'center',
+    backgroundColor: '#F0EDFF',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+  },
+  modalBtnNavText: {
+    color: '#6C63FF',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  // ── Duration picker chips ──
+  durationRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  durationChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 15,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  durationChipActive: {
+    backgroundColor: '#EDE9FE',
+    borderColor: '#6C63FF',
+  },
+  durationChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  durationChipTextActive: {
+    color: '#6C63FF',
+  },
   topControls: {
     position: 'absolute',
-    top: 18,
+    top: 128,
     left: 16,
     right: 16,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   pill: {
     flexDirection: 'row',
